@@ -1,12 +1,22 @@
 {
-  "background_color": "#ffffff",
-  "dir": "auto",
-  "display": "standalone",
-  "name": "aditiujyoti-private.github",
-  "orientation": "any",
-  "scope": "/",
-  "short_name": "aditiujyoti-private.github",
+  "name": "Noten",
+  "short_name": "Noten",
+  "description": "Notenverwaltung App",
   "start_url": "/Noten/",
+  "display": "standalone",
+  "background_color": "#f5f4f0",
   "theme_color": "#111111",
-  "lang": "de"
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/Noten/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/Noten/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
 }
