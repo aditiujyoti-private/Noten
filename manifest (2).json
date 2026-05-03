@@ -1,0 +1,12 @@
+{
+  "background_color": "#ffffff",
+  "dir": "auto",
+  "display": "standalone",
+  "name": "aditiujyoti-private.github",
+  "orientation": "any",
+  "scope": "/",
+  "short_name": "aditiujyoti-private.github",
+  "start_url": "/Noten/",
+  "theme_color": "#111111",
+  "lang": "de"
+}
