@@ -8,9 +8,6 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#111111">
 <title>Noten</title>
-<link rel="manifest" href="manifest.json">
-<link rel="icon" href="icon.svg">
-
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -115,6 +112,7 @@
     border-radius: var(--radius);
     padding: 14px 12px;
     border: 0.5px solid var(--border);
+    position: relative;
   }
 
   .stat-label {
@@ -300,6 +298,70 @@
     transition: opacity 0.15s;
   }
 
+  /* NEU: Testplaner-Bereich */
+  .testplaner {
+    background: var(--surface);
+    border-radius: var(--radius);
+    border: 0.5px solid var(--border);
+    padding: 16px;
+    margin-bottom: 20px;
+  }
+  .test-input-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 12px 0;
+  }
+  .test-input-row input, .test-input-row select {
+    flex: 1;
+    min-width: 120px;
+    height: 40px;
+    border: 0.5px solid var(--border2);
+    border-radius: var(--radius-sm);
+    background: var(--bg);
+    padding: 0 10px;
+    font-family: inherit;
+  }
+  .test-list {
+    margin-top: 12px;
+  }
+  .test-item {
+    background: var(--surface2);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 14px;
+  }
+  .test-item .del {
+    color: var(--bad);
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 18px;
+  }
+  .threshold-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 10px;
+  }
+  .threshold-row input {
+    width: 80px;
+    height: 36px;
+    text-align: center;
+  }
+  .alert-sign {
+    background: #fcebeb;
+    color: var(--bad);
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    margin-top: 8px;
+    display: inline-block;
+  }
+
   .bottom-bar {
     position: fixed;
     bottom: 0;
@@ -380,6 +442,7 @@
     <div class="stat-card">
       <div class="stat-label">Schnitt</div>
       <div class="stat-val" id="overall-avg">—</div>
+      <div id="threshold-alert" style="font-size:10px; margin-top:6px;"></div>
     </div>
     <div class="stat-card">
       <div class="stat-label">Fächer</div>
@@ -388,6 +451,26 @@
     <div class="stat-card">
       <div class="stat-label">Noten</div>
       <div class="stat-val" id="grade-count">0</div>
+    </div>
+  </div>
+
+  <!-- NEU: Testplaner -->
+  <div class="testplaner">
+    <div class="section-label"> Testplaner</div>
+    <div class="test-input-row">
+      <input type="text" id="test-subject" placeholder="Fach">
+      <input type="date" id="test-date">
+      <select id="test-type">
+        <option>Klassenarbeit</option><option>Test</option><option>Vokabeltest</option>
+      </select>
+      <button class="btn" onclick="addTest()">+</button>
+    </div>
+    <div id="test-list" class="test-list"></div>
+    
+    <div class="section-label" style="margin-top:12px;"> Alarm-Schwellwert</div>
+    <div class="threshold-row">
+      <input type="number" id="threshold-input" step="0.1" min="1" max="6" value="4.0">
+      <button class="btn secondary" onclick="setThreshold()">speichern</button>
     </div>
   </div>
 
@@ -412,6 +495,11 @@
     { id: 3, name: 'Englisch', grades: [5.5, 6, 5] },
   ];
   let nextId = Math.max(...subjects.map(s => s.id), 0) + 1;
+
+  // NEU: Tests & Schwellwert
+  let tests = JSON.parse(localStorage.getItem('noten_tests') || '[]');
+  let threshold = parseFloat(localStorage.getItem('noten_threshold') || '4.0');
+  document.getElementById('threshold-input').value = threshold;
 
   function save() {
     localStorage.setItem('noten_subjects', JSON.stringify(subjects));
@@ -442,6 +530,95 @@
     return `<span class="grade-badge" style="background:var(--badbg);color:var(--bad)">tief</span>`;
   }
 
+  // NEU: Alarm prüfen und anzeigen
+  function checkThresholdAlert() {
+    let allGrades = [];
+    subjects.forEach(s => allGrades = allGrades.concat(s.grades));
+    const overall = avg(allGrades);
+    const alertDiv = document.getElementById('threshold-alert');
+    if (overall !== null && overall < threshold && allGrades.length > 0) {
+      alertDiv.innerHTML = `<span class="alert-sign">⚠️ Schnitt (${overall.toFixed(2)}) unter ${threshold}</span>`;
+    } else {
+      alertDiv.innerHTML = '';
+    }
+  }
+
+  // NEU: Tests rendern und Erinnerungen planen
+  function renderTests() {
+    const container = document.getElementById('test-list');
+    if (!tests.length) {
+      container.innerHTML = '<div style="color:var(--text3); font-size:13px;">Keine Tests geplant</div>';
+      return;
+    }
+    let html = '';
+    tests.forEach((t, idx) => {
+      html += `<div class="test-item">
+        <span><strong>${t.subject}</strong> – ${t.type} am ${t.date}</span>
+        <span class="del" onclick="deleteTest(${idx})">✕</span>
+      </div>`;
+    });
+    container.innerHTML = html;
+  }
+
+  function saveTests() {
+    localStorage.setItem('noten_tests', JSON.stringify(tests));
+  }
+
+  function scheduleNotificationForTest(test) {
+    const testDate = new Date(test.date);
+    const reminderDate = new Date(testDate);
+    reminderDate.setDate(testDate.getDate() - 3);
+    const now = new Date();
+    if (reminderDate > now) {
+      const ms = reminderDate - now;
+      setTimeout(() => {
+        if (Notification.permission === 'granted') {
+          new Notification(' Test in 3 Tagen', {
+            body: `${test.subject} – ${test.type} am ${test.date}`,
+            icon: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="black"%3E%3Cpath d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"/%3E%3C/svg%3E'
+          });
+        }
+      }, ms);
+    } else if (reminderDate <= now && testDate >= now) {
+      if (Notification.permission === 'granted') {
+        new Notification(' Test bald', { body: `${test.subject} – ${test.type} am ${test.date} (in weniger als 3 Tagen)` });
+      }
+    }
+  }
+
+  function addTest() {
+    const subject = document.getElementById('test-subject').value.trim();
+    const date = document.getElementById('test-date').value;
+    const type = document.getElementById('test-type').value;
+    if (!subject || !date) return;
+    const newTest = { subject, date, type };
+    tests.push(newTest);
+    saveTests();
+    renderTests();
+    scheduleNotificationForTest(newTest);
+    showToast(`Test für ${subject} gespeichert`);
+    document.getElementById('test-subject').value = '';
+    document.getElementById('test-date').value = '';
+  }
+
+  function deleteTest(idx) {
+    tests.splice(idx, 1);
+    saveTests();
+    renderTests();
+    showToast('Test gelöscht');
+  }
+
+  function setThreshold() {
+    const val = parseFloat(document.getElementById('threshold-input').value);
+    if (!isNaN(val) && val >= 1 && val <= 6) {
+      threshold = val;
+      localStorage.setItem('noten_threshold', threshold);
+      checkThresholdAlert();
+      showToast(`Schwellwert auf ${threshold} gesetzt`);
+    }
+  }
+
+  // Bestehende Funktionen (leicht erweitert um Alarm)
   function render() {
     const list = document.getElementById('subjects-list');
     list.innerHTML = '';
@@ -455,6 +632,8 @@
     oEl.className = 'stat-val' + (overall === null ? '' : overall >= 5 ? ' good' : overall >= 4 ? ' warn' : ' bad');
     document.getElementById('subject-count').textContent = subjects.length;
     document.getElementById('grade-count').textContent = allGrades.length;
+
+    checkThresholdAlert(); // Alarm aktualisieren
 
     subjects.forEach(s => {
       const a = avg(s.grades);
@@ -492,6 +671,7 @@
       list.appendChild(card);
     });
 
+    // Event-Listener (identisch zu deinem Original)
     list.querySelectorAll('.subject-head').forEach(el => {
       el.addEventListener('click', () => {
         const sid = parseInt(el.dataset.sid);
@@ -558,12 +738,19 @@
     window._tt = setTimeout(() => t.classList.remove('show'), 2000);
   }
 
+  // NEU: Erinnerungen für gespeicherte Tests beim Laden einrichten
+  function initNotifications() {
+    tests.forEach(t => scheduleNotificationForTest(t));
+    if (Notification.permission === 'default') Notification.requestPermission();
+  }
+
   document.getElementById('new-subject-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') addSubject();
   });
 
+  renderTests();
+  initNotifications();
   render();
 </script>
-<script>if("serviceWorker" in navigator){navigator.serviceWorker.register("sw.js");}</script>
 </body>
 </html>
