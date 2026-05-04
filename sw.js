@@ -1,4 +1,4 @@
-const CACHE = 'noten-v1';
+const CACHE = 'noten-v3';
 const ASSETS = ['./index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e => {
