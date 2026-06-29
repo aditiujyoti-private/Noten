@@ -368,4 +368,311 @@ function renderLernplan(){
   if(dueToday.length){
     todaySection.style.display='block';
     const todoList=document.getElementById('todo-list');
-    todoList
+    todoList.innerHTML='';
+    dueToday.forEach(g=>{
+      const done=!!todoDone[g.id];
+      const item=document.createElement('div');
+      item.className='todo-item'+(done?' done':'');
+      item.innerHTML=`<div class="todo-check ${done?'checked':''}" data-gid="${g.id}"><svg viewBox="0 0 12 12" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="2 6 5 9 10 3"/></svg></div><div class="todo-info"><div class="todo-subject">${g.subject}</div><div class="todo-goal">${g.goal}</div><div class="todo-repeat">${g.type||''}</div></div>`;
+      todoList.appendChild(item);
+    });
+    todoList.querySelectorAll('.todo-check').forEach(el=>{el.addEventListener('click',()=>{const gid=parseInt(el.dataset.gid);todoDone[gid]=!todoDone[gid];saveGoals();renderLernplan();});});
+  } else { todaySection.style.display='none'; }
+
+  if(goals.length){
+    allSection.style.display='block';
+    const goalsList=document.getElementById('goals-list');
+    goalsList.innerHTML='';
+    goals.forEach(g=>{
+      const card=document.createElement('div');card.className='goal-card';
+      const d=new Date(g.date);
+      const typeColor=g.type==='Lernen'?'background:#e6f1fb;color:#0c447c':g.type==='Wiederholen'?'background:var(--warnbg);color:var(--warn)':'background:var(--goodbg);color:var(--good)';
+      card.innerHTML=`<div style="min-width:40px;text-align:center;background:var(--surface2);border-radius:8px;padding:6px 4px"><div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700;line-height:1">${d.getDate()}</div><div style="font-size:9px;color:var(--text3);text-transform:uppercase">${d.toLocaleString('de',{month:'short'})}</div></div><div class="goal-info"><div class="goal-subject">${g.subject}</div><div class="goal-text">${g.goal}</div></div>${g.type?`<span style="font-size:10px;font-weight:500;padding:3px 8px;border-radius:6px;${typeColor};white-space:nowrap">${g.type}</span>`:''}<span class="goal-del" data-gid="${g.id}">×</span>`;
+      goalsList.appendChild(card);
+    });
+    goalsList.querySelectorAll('.goal-del').forEach(el=>{el.addEventListener('click',()=>{goals=goals.filter(g=>g.id!==parseInt(el.dataset.gid));saveGoals();renderLernplan();showToast('Lerneinheit gelöscht');});});
+  } else { allSection.style.display='none'; }
+}
+
+function generatePlan(){
+  const examId=parseInt(document.getElementById('lp-exam-sel').value);
+  const goalsText=document.getElementById('lp-goals-txt').value.trim();
+  if(!examId){showToast('Bitte eine Prüfung wählen');return;}
+  if(!goalsText){showToast('Bitte Lernziele eingeben');return;}
+  const exam=tests.find(t=>t.id===examId);
+  if(!exam){showToast('Prüfung nicht gefunden');return;}
+  const topics=goalsText.split('\n').map(l=>l.trim()).filter(l=>l.length>0);
+  const today=new Date();today.setHours(0,0,0,0);
+  const examDate=new Date(exam.date);examDate.setHours(0,0,0,0);
+  const daysLeft=Math.round((examDate-today)/86400000);
+  if(daysLeft<1){showToast('Prüfung ist bereits vorbei!');return;}
+  const plan=[];
+  const learnDays=Math.max(1,Math.floor(daysLeft*0.5));
+  topics.forEach((topic,i)=>{const d=new Date(today);d.setDate(d.getDate()+Math.floor((i/topics.length)*learnDays));plan.push({date:d.toISOString().slice(0,10),goal:topic,type:'Lernen'});});
+  const repeatStart=Math.floor(daysLeft*0.55);
+  topics.forEach((topic,i)=>{const d=new Date(today);d.setDate(d.getDate()+repeatStart+Math.floor((i/topics.length)*(daysLeft*0.3)));plan.push({date:d.toISOString().slice(0,10),goal:`Wiederholen: ${topic}`,type:'Wiederholen'});});
+  if(daysLeft>=2){const d=new Date(examDate);d.setDate(d.getDate()-1);plan.push({date:d.toISOString().slice(0,10),goal:'Gesamtwiederholung: alle Themen',type:'Festigen'});}
+  plan.sort((a,b)=>new Date(a.date)-new Date(b.date));
+  plan.forEach(entry=>{goals.push({id:nextGoalId++,subject:exam.subject,goal:entry.goal,repeat:'none',date:entry.date,type:entry.type});});
+  saveGoals();
+  document.getElementById('lp-result').innerHTML=`<div class="alert-card good-alert" style="margin-bottom:16px"><div class="alert-icon">✅</div><div><div class="alert-title">${plan.length} Lerneinheiten für ${exam.subject} erstellt!</div><div class="alert-msg">${topics.length} Themen · ${daysLeft} Tage bis zur Prüfung</div></div></div>`;
+  document.getElementById('lp-goals-txt').value='';
+  renderLernplan();
+  showToast('Lernplan erstellt! 🎉');
+}
+
+function addGoal(){}
+
+function save(){localStorage.setItem('noten_subjects',JSON.stringify(subjects));localStorage.setItem('noten_tests',JSON.stringify(tests));localStorage.setItem('noten_threshold',threshold);}
+function avg(arr){if(!arr.length)return null;return arr.reduce((a,b)=>a+b,0)/arr.length;}
+function gradeColor(v){if(v===null)return'var(--text3)';if(v>=5)return'var(--good)';if(v>=4)return'var(--warn)';return'var(--bad)';}
+function barColor(v){if(v>=5)return'#639922';if(v>=4)return'#EF9F27';return'#E24B4A';}
+function gradeBadge(v){if(v===null)return'';if(v>=5)return`<span class="grade-badge" style="background:var(--goodbg);color:var(--good)">gut</span>`;if(v>=4)return`<span class="grade-badge" style="background:var(--warnbg);color:var(--warn)">ok</span>`;return`<span class="grade-badge" style="background:var(--badbg);color:var(--bad)">tief</span>`;}
+function daysUntil(ds){const t=new Date();t.setHours(0,0,0,0);const d=new Date(ds);d.setHours(0,0,0,0);return Math.round((d-t)/86400000);}
+
+function switchTab(tab,el){
+  currentTab=tab;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('page-'+tab).classList.add('active');
+  document.getElementById('bottom-grades').style.display=tab==='grades'?'flex':'none';
+  if(tab==='tests')renderTests();
+  if(tab==='alerts')renderAlerts();
+  if(tab==='lernplan')renderLernplan();
+  if(tab==='todo')renderTodo();
+}
+
+function renderGrades(){
+  const list=document.getElementById('subjects-list');
+  list.innerHTML='';
+  let allGrades=[];
+  subjects.forEach(s=>allGrades=allGrades.concat(s.grades));
+  const overall=avg(allGrades);
+  const oEl=document.getElementById('overall-avg');
+  oEl.textContent=overall!==null?overall.toFixed(2):'—';
+  oEl.className='stat-val'+(overall===null?'':overall>=5?' good':overall>=4?' warn':' bad');
+  document.getElementById('subject-count').textContent=subjects.length;
+  document.getElementById('grade-count').textContent=allGrades.length;
+  subjects.forEach(s=>{
+    const a=avg(s.grades);
+    const pct=a!==null?Math.round(((a-SCALE_MIN)/(SCALE_MAX-SCALE_MIN))*100):0;
+    const isOpen=openId===s.id;
+    const card=document.createElement('div');
+    card.className='subject-card';
+    const pillsHtml=s.grades.length?s.grades.map((g,i)=>`<div class="grade-pill">${g%1===0?g+'.0':g}<span class="del" data-id="${s.id}" data-idx="${i}">×</span></div>`).join(''):`<div class="empty-state">Noch keine Noten.</div>`;
+    card.innerHTML=`<div class="subject-head" data-sid="${s.id}"><span class="subject-name">${s.name}${gradeBadge(a)}</span><div class="subject-right"><span class="subject-avg" style="color:${gradeColor(a)}">${a!==null?a.toFixed(2):'—'}</span><svg class="chevron ${isOpen?'open':''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div></div><div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:${barColor(a||0)}"></div></div><div class="subject-body ${isOpen?'open':''}"><div class="grades-wrap">${pillsHtml}</div><div class="add-grade-row"><input type="number" inputmode="decimal" min="1" max="6" step="0.5" placeholder="Note (1–6)" id="gi-${s.id}"><button class="btn" data-add="${s.id}">+ Note</button><button class="del-subject-btn" data-del="${s.id}">✕</button></div></div>`;
+    list.appendChild(card);
+  });
+  list.querySelectorAll('.subject-head').forEach(el=>{el.addEventListener('click',()=>{const sid=parseInt(el.dataset.sid);openId=openId===sid?null:sid;renderGrades();});});
+  list.querySelectorAll('.del').forEach(el=>{el.addEventListener('click',e=>{e.stopPropagation();const s=subjects.find(x=>x.id===parseInt(el.dataset.id));if(s){s.grades.splice(parseInt(el.dataset.idx),1);save();renderGrades();checkAlerts();}});});
+  list.querySelectorAll('[data-add]').forEach(btn=>btn.addEventListener('click',()=>addGrade(parseInt(btn.dataset.add))));
+  list.querySelectorAll('[data-del]').forEach(btn=>{btn.addEventListener('click',()=>{subjects=subjects.filter(x=>x.id!==parseInt(btn.dataset.del));if(openId===parseInt(btn.dataset.del))openId=null;save();renderGrades();showToast('Fach gelöscht');});});
+}
+
+function renderTests(){
+  const sel=document.getElementById('test-subject-sel');
+  sel.innerHTML='<option value="">Fach wählen...</option>';
+  subjects.forEach(s=>{const o=document.createElement('option');o.value=s.name;o.textContent=s.name;sel.appendChild(o);});
+  const list=document.getElementById('test-list');
+  const upcoming=tests.filter(t=>daysUntil(t.date)>=0).sort((a,b)=>new Date(a.date)-new Date(b.date));
+  const past=tests.filter(t=>daysUntil(t.date)<0);
+  if(!upcoming.length&&!past.length){list.innerHTML='<div class="no-tests">Keine Prüfungen eingetragen.</div>';return;}
+  list.innerHTML='';
+  upcoming.forEach(t=>{
+    const days=daysUntil(t.date);
+    const d=new Date(t.date);
+    const mon=d.toLocaleString('de',{month:'short'});
+    let urgencyClass='',daysLabel='',daysColor='';
+    if(days===0){urgencyClass='urgent';daysLabel='Heute!';daysColor='background:var(--badbg);color:var(--bad)';}
+    else if(days<=3){urgencyClass='urgent';daysLabel=`${days} Tag${days>1?'e':''}!`;daysColor='background:var(--badbg);color:var(--bad)';}
+    else if(days<=7){urgencyClass='soon';daysLabel=`${days} Tage`;daysColor='background:var(--warnbg);color:var(--warn)';}
+    else{daysLabel=`${days} Tage`;daysColor='background:var(--surface2);color:var(--text3)';}
+    const card=document.createElement('div');
+    card.className=`test-card ${urgencyClass}`;
+    card.innerHTML=`<div class="test-date-box"><div class="test-date-day">${d.getDate()}</div><div class="test-date-mon">${mon}</div></div><div class="test-info"><div class="test-subject">${t.subject}</div><div class="test-type">${t.type}</div></div><div class="test-days-left" style="${daysColor}">${daysLabel}</div><span class="test-del" data-tid="${t.id}">×</span>`;
+    list.appendChild(card);
+  });
+  if(past.length){
+    const lbl=document.createElement('div');lbl.className='section-label';lbl.style.marginTop='16px';lbl.textContent='Vergangene Prüfungen';list.appendChild(lbl);
+    past.sort((a,b)=>new Date(b.date)-new Date(a.date)).forEach(t=>{
+      const d=new Date(t.date);const mon=d.toLocaleString('de',{month:'short'});
+      const card=document.createElement('div');card.className='test-card';card.style.opacity='0.5';
+      card.innerHTML=`<div class="test-date-box"><div class="test-date-day">${d.getDate()}</div><div class="test-date-mon">${mon}</div></div><div class="test-info"><div class="test-subject">${t.subject}</div><div class="test-type">${t.type}</div></div><span class="test-del" data-tid="${t.id}">×</span>`;
+      list.appendChild(card);
+    });
+  }
+  list.querySelectorAll('.test-del').forEach(el=>{el.addEventListener('click',()=>{tests=tests.filter(t=>t.id!==parseInt(el.dataset.tid));save();renderTests();showToast('Prüfung gelöscht');});});
+}
+
+function addTest(){
+  const subj=document.getElementById('test-subject-sel').value;
+  const type=document.getElementById('test-type-sel').value;
+  const date=document.getElementById('test-date-inp').value;
+  if(!subj||!date){showToast('Bitte Fach und Datum angeben');return;}
+  const t={id:nextTestId++,subject:subj,type,date};
+  tests.push(t);save();renderTests();scheduleNotification(t);showToast('Prüfung hinzugefügt');
+  document.getElementById('test-subject-sel').value='';document.getElementById('test-date-inp').value='';
+}
+
+function renderAlerts(){
+  const inp=document.getElementById('threshold-inp');
+  inp.value=threshold;
+  inp.onchange=()=>{threshold=parseFloat(inp.value);save();renderAlerts();};
+  const list=document.getElementById('alerts-list');list.innerHTML='';
+  let hasAlert=false;
+  subjects.forEach(s=>{
+    const a=avg(s.grades);if(a===null)return;
+    if(a<threshold){hasAlert=true;const div=document.createElement('div');div.className='alert-card bad-alert';div.innerHTML=`<div class="alert-icon">📉</div><div><div class="alert-title">${s.name} — Schnitt ${a.toFixed(2)}</div><div class="alert-msg">Unter der Warnschwelle (${threshold}). Mehr lernen!</div></div>`;list.appendChild(div);}
+    else if(a<threshold+0.5){hasAlert=true;const div=document.createElement('div');div.className='alert-card warn-alert';div.innerHTML=`<div class="alert-icon">⚠️</div><div><div class="alert-title">${s.name} — Schnitt ${a.toFixed(2)}</div><div class="alert-msg">Nähert sich der Warnschwelle.</div></div>`;list.appendChild(div);}
+  });
+  const urgent=tests.filter(t=>{const d=daysUntil(t.date);return d>=0&&d<=3;});
+  urgent.forEach(t=>{hasAlert=true;const days=daysUntil(t.date);const div=document.createElement('div');div.className='alert-card bad-alert';div.innerHTML=`<div class="alert-icon">📅</div><div><div class="alert-title">${t.subject} — ${t.type}</div><div class="alert-msg">${days===0?'Heute!':'In '+days+' Tag'+(days>1?'en':'')+'!'} Bereite dich vor!</div></div>`;list.appendChild(div);});
+  const soon=tests.filter(t=>{const d=daysUntil(t.date);return d>3&&d<=7;});
+  soon.forEach(t=>{const div=document.createElement('div');div.className='alert-card warn-alert';div.innerHTML=`<div class="alert-icon">📖</div><div><div class="alert-title">${t.subject} — ${t.type}</div><div class="alert-msg">In ${daysUntil(t.date)} Tagen. Fang an zu lernen!</div></div>`;list.appendChild(div);});
+  if(!hasAlert&&!soon.length){const div=document.createElement('div');div.className='alert-card good-alert';div.innerHTML=`<div class="alert-icon">✅</div><div><div class="alert-title">Alles gut!</div><div class="alert-msg">Keine Warnungen. Weiter so!</div></div>`;list.appendChild(div);}
+  document.getElementById('notif-dot').style.display=hasAlert?'block':'none';
+}
+
+function checkAlerts(){
+  const hasAlert=subjects.some(s=>{const a=avg(s.grades);return a!==null&&a<threshold;});
+  const urgentTest=tests.some(t=>{const d=daysUntil(t.date);return d>=0&&d<=3;});
+  document.getElementById('notif-dot').style.display=(hasAlert||urgentTest)?'block':'none';
+}
+
+function addGrade(id){
+  const inp=document.getElementById('gi-'+id);
+  const v=parseFloat(inp.value.replace(',','.'));
+  if(isNaN(v)||v<1||v>6){inp.style.borderColor='var(--bad)';setTimeout(()=>inp.style.borderColor='',800);showToast('Note muss zwischen 1 und 6 liegen');return;}
+  const s=subjects.find(x=>x.id===id);
+  if(s){s.grades.push(Math.round(v*2)/2);inp.value='';save();renderGrades();checkAlerts();showToast('Note '+v+' hinzugefügt');}
+}
+
+function addSubject(){
+  const inp=document.getElementById('new-subject-input');
+  const name=inp.value.trim();if(!name)return;
+  const s={id:nextId++,name,grades:[]};subjects.push(s);openId=s.id;inp.value='';
+  save();renderGrades();showToast('"'+name+'" hinzugefügt');
+}
+
+async function requestNotifPermission(){
+  if(!('Notification' in window)){showToast('Nicht unterstützt');return;}
+  const perm=await Notification.requestPermission();
+  if(perm==='granted'){showToast('Benachrichtigungen aktiviert!');scheduleAllNotifications();}
+  else showToast('Benachrichtigungen abgelehnt');
+}
+
+function scheduleNotification(t){
+  if(typeof Notification==='undefined'||Notification.permission!=='granted')return;
+  const days=daysUntil(t.date);
+  if(days>=0&&days<=3){new Notification('Prüfung '+(days===0?'heute':'in '+days+' Tag'+(days>1?'en':''))+'!',{body:t.subject+' — '+t.type,icon:'icon-192.png'});}
+}
+
+function scheduleAllNotifications(){
+  tests.forEach(t=>scheduleNotification(t));
+  subjects.forEach(s=>{const a=avg(s.grades);if(a!==null&&a<threshold){new Notification('Noten-Warnung: '+s.name,{body:'Dein Schnitt ist '+a.toFixed(2)+'. Mehr lernen!',icon:'icon-192.png'});}});
+}
+
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(window._tt);window._tt=setTimeout(()=>t.classList.remove('show'),2200);}
+
+// Custom Date Picker
+let dpTargetId=null,dpSelectedDate=null,dpViewDate=new Date();
+const dpMonths=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+
+function dpOpen(targetId, title){
+  dpTargetId=targetId;
+  const existing=document.getElementById(targetId).value;
+  dpSelectedDate=existing?new Date(existing):null;
+  dpViewDate=dpSelectedDate?new Date(dpSelectedDate):new Date();
+  document.getElementById('dp-title').textContent=title||'Datum wählen';
+  document.getElementById('dp-overlay').style.display='flex';
+  dpRender();
+}
+
+function dpClose(){document.getElementById('dp-overlay').style.display='none';}
+
+function dpClickOutside(e){if(e.target===document.getElementById('dp-overlay'))dpClose();}
+
+function dpPrevMonth(){dpViewDate.setMonth(dpViewDate.getMonth()-1);dpRender();}
+function dpNextMonth(){dpViewDate.setMonth(dpViewDate.getMonth()+1);dpRender();}
+
+function dpRender(){
+  const y=dpViewDate.getFullYear(),m=dpViewDate.getMonth();
+  document.getElementById('dp-month-label').textContent=`${dpMonths[m]} ${y}`;
+  const firstDay=new Date(y,m,1);
+  let startDow=firstDay.getDay()-1; if(startDow<0)startDow=6;
+  const daysInMonth=new Date(y,m+1,0).getDate();
+  const today=new Date();today.setHours(0,0,0,0);
+  const container=document.getElementById('dp-days');
+  container.innerHTML='';
+  for(let i=0;i<startDow;i++){const el=document.createElement('div');el.className='dp-day other-month';container.appendChild(el);}
+  for(let d=1;d<=daysInMonth;d++){
+    const el=document.createElement('div');el.className='dp-day';el.textContent=d;
+    const thisDate=new Date(y,m,d);thisDate.setHours(0,0,0,0);
+    if(thisDate.getTime()===today.getTime())el.classList.add('today');
+    if(dpSelectedDate){const sd=new Date(dpSelectedDate);sd.setHours(0,0,0,0);if(sd.getTime()===thisDate.getTime())el.classList.add('selected');}
+    el.addEventListener('click',()=>{
+      dpSelectedDate=new Date(y,m,d);
+      dpRender();
+    });
+    container.appendChild(el);
+  }
+}
+
+function dpConfirm(){
+  if(!dpSelectedDate){showToast('Bitte ein Datum wählen');return;}
+  const iso=dpSelectedDate.toISOString().slice(0,10);
+  document.getElementById(dpTargetId).value=iso;
+  // Update display label
+  const displayId=dpTargetId.replace('-inp','-display');
+  const displayEl=document.getElementById(displayId);
+  if(displayEl)displayEl.textContent=dpSelectedDate.toLocaleDateString('de');
+  dpClose();
+}
+
+document.getElementById('new-subject-input').addEventListener('keydown',e=>{if(e.key==='Enter')addSubject();});
+document.getElementById('bottom-grades').style.display='flex';
+renderGrades();checkAlerts();
+
+// ============================================
+// 🚀 OFFLINE SUPPORT - Service Worker Registration
+// ============================================
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    // Your app is at /noten-pwa/ on GitHub Pages
+    const basePath = '/noten-pwa';
+    
+    navigator.serviceWorker.register(`${basePath}/sw.js`, {
+      scope: `${basePath}/`
+    })
+      .then(reg => {
+        console.log('✅ Service Worker registered!');
+        console.log('Scope:', reg.scope);
+      })
+      .catch(err => {
+        console.log('❌ Registration failed:', err);
+        showToast('⚠️ Offline-Modus nicht verfügbar');
+      });
+  });
+}
+
+// Show offline/online status
+window.addEventListener('online', () => {
+  const nameEl = document.querySelector('.app-name');
+  if (nameEl) nameEl.textContent = 'Noten';
+  showToast('✅ Wieder online!');
+});
+
+window.addEventListener('offline', () => {
+  const nameEl = document.querySelector('.app-name');
+  if (nameEl) nameEl.textContent = '📴 Noten (Offline)';
+  showToast('📴 Offline - Änderungen werden gespeichert');
+});
+
+// Check initial status
+if (navigator.onLine === false) {
+  document.querySelector('.app-name').textContent = '📴 Noten (Offline)';
+}
+</script>
+</body>
+</html>
